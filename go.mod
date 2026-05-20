@@ -1,4 +1,4 @@
-module adb-go
+module github.com/juanlianyangyang/adb-go
 
 go 1.26.3
 
