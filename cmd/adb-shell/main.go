@@ -12,11 +12,10 @@ import (
 	"context"
 	"crypto/rsa"
 	"fmt"
+	"github.com/juanlianyangyang/adb-go/adb"
 	"os"
 	"strings"
 	"time"
-
-	"adb-go/adb"
 )
 
 func main() {

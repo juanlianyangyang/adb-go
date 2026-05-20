@@ -9,11 +9,11 @@
 package main
 
 import (
-	"adb-go/adb"
 	"bufio"
 	"context"
 	"crypto/rsa"
 	"fmt"
+	"github.com/juanlianyangyang/adb-go/adb"
 	"io"
 	"net"
 	"os"
@@ -28,17 +28,8 @@ type ReplState struct {
 }
 
 func main() {
-	fmt.Println("======================================================")
-	fmt.Println("       ADB 交互式测试沙盒 (Interactive Sandbox)       ")
-	fmt.Println("======================================================")
-	fmt.Println(" 支持指令:")
-	fmt.Println("  - adb pair <ip:port> <配对码>  (无线调试首次配对)")
-	fmt.Println("  - adb connect <ip:port>        (建立 ADB 连接)")
-	fmt.Println("  - adb disconnect               (断开当前连接)")
-	fmt.Println("  - adb shell <命令>             (执行 Shell 指令)")
-	fmt.Println("  - adb push / pull              (文件传输能力测试)")
-	fmt.Println("  - exit / quit                  (退出沙盒)")
-	fmt.Println("======================================================")
+	// 启动时打印一次完整帮助信息
+	printHelp()
 
 	// 1. 初始化并加载全局测试密钥
 	// 传 false 表示优先读取本地 adbkey.pem，避免每次重启工具电视都重新弹窗
@@ -84,6 +75,10 @@ func main() {
 		command := args[0]
 
 		switch command {
+		// ====== 新增: 帮助指令拦截 ======
+		case "?", "help":
+			printHelp()
+
 		case "exit", "quit", "q":
 			if state.Client != nil {
 				state.Client.Close()
@@ -552,4 +547,35 @@ func main() {
 			fmt.Printf("❌ 未知指令: %s\n", command)
 		}
 	}
+}
+
+func printHelp() {
+	fmt.Println("\n======================================================")
+	fmt.Println("       ADB 交互式测试沙盒 (Interactive Sandbox)       ")
+	fmt.Println("======================================================")
+	fmt.Println(" 🔌 【连接管理】")
+	fmt.Println("  - pair <ip:port> <配对码>   : 无线调试首次配对")
+	fmt.Println("  - connect <ip:port>         : 建立 ADB 连接")
+	fmt.Println("  - disconnect                : 断开当前连接")
+	fmt.Println("\n 💻 【终端与执行】")
+	fmt.Println("  - shell                     : 进入交互式 Shell")
+	fmt.Println("  - shell <命令>              : 执行单条 Shell 命令并返回")
+	fmt.Println("\n 📂 【文件与目录】")
+	fmt.Println("  - push <本地> <设备>        : 将本地文件推送到设备")
+	fmt.Println("  - pull <设备> <本地>        : 从设备拉取文件到本地")
+	fmt.Println("  - ls [目录]                 : 查看本地目录文件信息(默认当前目录)")
+	fmt.Println("\n ⚙️ 【系统与提权】")
+	fmt.Println("  - root                      : 请求以 root 权限重启 adbd")
+	fmt.Println("  - unroot                    : 恢复非 root 状态")
+	fmt.Println("  - remount                   : 重新挂载系统分区为可读写")
+	fmt.Println("  - reboot [模式]             : 重启设备 (可选: recovery, bootloader 等)")
+	fmt.Println("\n 📸 【屏幕捕获】")
+	fmt.Println("  - cap [保存路径]            : 截取屏幕并保存为 PNG (默认当前目录)")
+	fmt.Println("  - bmp [保存路径]            : 截取屏幕 Framebuffer 并保存为 BMP")
+	fmt.Println("\n 🛠️ 【高级测试】")
+	fmt.Println("  - test-tunnel               : 执行极限套娃测试 (正向+反向隧道透传验证)")
+	fmt.Println("\n 💡 【其他】")
+	fmt.Println("  - ? / help                  : 打印此帮助信息")
+	fmt.Println("  - exit / quit / q           : 退出沙盒")
+	fmt.Println("======================================================\n")
 }
