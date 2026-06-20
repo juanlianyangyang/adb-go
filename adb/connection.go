@@ -345,3 +345,136 @@ func (c *Connection) Close() error {
 	}
 	return nil
 }
+
+// ProbeAuthStatus 快速探测设备的授权状态。
+// 复用已有的连接和认证逻辑，一旦确认状态立即返回，不进行长连接和流管理。
+// 返回值可能为: "Authorized", "Unauthorized", 或 "Error"
+func (c *Connection) ProbeAuthStatus(ctx context.Context) (*FastConnectResult, error) {
+	// 创建用于接收结果的通道
+	statusChan := make(chan *FastConnectResult, 1)
+	errChan := make(chan error, 1)
+
+	// 启动探测协程
+	go func() {
+		protocolVersion := GetProtocolVersion(c.apiLevel)
+
+		// 触发握手第一步
+		if err := c.sendPacket(GenerateConnect()); err != nil {
+			errChan <- fmt.Errorf("发送初始 Connect 包失败: %w", err)
+			return
+		}
+
+		// 极简版 ReadLoop：只处理握手，不处理流
+		for {
+			c.connMu.RLock()
+			currentConn := c.conn
+			c.connMu.RUnlock()
+
+			msg, err := ParseMessage(currentConn, protocolVersion, c.maxData)
+			if err != nil {
+				if strings.Contains(err.Error(), "tls: unknown certificate") {
+					statusChan <- &FastConnectResult{Status: ConnectStatusTlsUnauthorized}
+					return
+				}
+				errChan <- fmt.Errorf("读取消息失败 (可能端口关闭或协议不符): %w", err)
+				return
+			}
+
+			switch msg.Command {
+			case CmdStls:
+				// 照搬你原本完全可用的 TLS 升级逻辑
+				stlsMsg := GenerateMessage(CmdStls, AStlsVersion, 0, nil)
+				c.sendPacket(stlsMsg)
+
+				cert, err := GenerateTLSCertificate(c.privKey, c.deviceName)
+				if err != nil {
+					errChan <- fmt.Errorf("生成 TLS 证书失败: %v", err)
+					return
+				}
+
+				tlsConfig := &tls.Config{
+					Certificates:       []tls.Certificate{cert},
+					InsecureSkipVerify: true,
+					GetClientCertificate: func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+						return &cert, nil
+					},
+					MinVersion: tls.VersionTLS13,
+					MaxVersion: tls.VersionTLS13,
+				}
+
+				tlsConn := tls.Client(currentConn, tlsConfig)
+				if err := tlsConn.Handshake(); err != nil {
+					errChan <- fmt.Errorf("TLS 握手失败: %v", err)
+					return
+				}
+
+				c.connMu.Lock()
+				c.conn = tlsConn
+				c.connMu.Unlock()
+				// TLS 升级成功，继续等待接下来的 Auth 或 Cnxn
+				continue
+
+			case CmdAuth:
+				if msg.Arg0 == AdbAuthToken {
+					if !c.sentSignature {
+						LogInfof("[AUTH] 收到认证令牌，尝试发送 RSA 签名...")
+						signature, err := Sign(c.privKey, msg.Payload)
+						if err != nil {
+							LogErrorf("[AUTH] RSA 签名生成失败: %v", err)
+							continue
+						}
+
+						authMsg := GenerateMessage(CmdAuth, AdbAuthSignature, 0, signature)
+						c.sendPacket(authMsg)
+						c.sentSignature = true
+					} else {
+						statusChan <- &FastConnectResult{Status: ConnectStatusUnauthorized}
+						return
+					}
+				}
+			case CmdCnxn:
+				// 【关键点】收到 Cnxn：
+				// 说明连接确认成功，设备信任我们的密钥！
+				statusChan <- &FastConnectResult{Status: ConnectStatusSuccess, Model: parseDeviceModel(msg.Payload)}
+				return
+
+			// 忽略其他无关指令（由于是探测阶段，通常不会收到流相关的包）
+			default:
+				continue
+			}
+		}
+	}()
+
+	// 结合 Context 超时控制，等待结果
+	select {
+	case status := <-statusChan:
+		return status, nil
+	case err := <-errChan:
+		return &FastConnectResult{Status: ConnectStatusError}, err
+	case <-ctx.Done():
+		return &FastConnectResult{Status: ConnectStatusError}, ctx.Err()
+	}
+}
+
+// parseDeviceModel 从 CNXN payload 中提取设备型号
+func parseDeviceModel(payload []byte) string {
+	infoStr := string(payload)
+	// 去除尾部的 \x00
+	infoStr = strings.TrimRight(infoStr, "\x00")
+
+	// 按照 ADB 协议，格式通常为 "device::key=val;key=val;"
+	parts := strings.Split(infoStr, "::")
+	if len(parts) < 2 {
+		return "Unknown Device"
+	}
+
+	props := strings.Split(parts[1], ";")
+	for _, prop := range props {
+		kv := strings.SplitN(prop, "=", 2)
+		if len(kv) == 2 && kv[0] == "ro.product.model" {
+			return kv[1]
+		}
+	}
+
+	return "Unknown Model"
+}

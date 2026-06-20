@@ -56,6 +56,21 @@ func Dial(ctx context.Context, address string, privKey *rsa.PrivateKey, deviceNa
 	return &Client{conn: adbConn}, nil
 }
 
+func FastStatusDial(ctx context.Context, address string, privKey *rsa.PrivateKey, deviceName string) (*FastConnectResult, error) {
+	var dialer net.Dialer
+	tcpConn, err := dialer.DialContext(ctx, "tcp", address)
+	if err != nil {
+		return &FastConnectResult{Status: ConnectStatusError}, fmt.Errorf("无法连接到 %s: %w", address, err)
+	}
+
+	if tcpConn, ok := tcpConn.(*net.TCPConn); ok {
+		tcpConn.SetNoDelay(true)
+	}
+	adbConn := NewConnection(tcpConn, privKey, deviceName, 30)
+	defer adbConn.Close()
+	return adbConn.ProbeAuthStatus(ctx)
+}
+
 func (c *Client) Disconnected() <-chan struct{} {
 	return c.conn.disconnected
 }

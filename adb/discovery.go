@@ -31,9 +31,9 @@ const (
 func (s DeviceState) String() string {
 	switch s {
 	case StateReadyToConnect:
-		return "已授权"
+		return "连接端口"
 	case StateWaitingForPair:
-		return "待配对"
+		return "等待配对"
 	default:
 		return "未知状态"
 	}

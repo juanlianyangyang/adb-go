@@ -239,3 +239,31 @@ func ParseMessage(r io.Reader, protocolVersion int, maxData int) (*Message, erro
 
 	return msg, nil
 }
+
+type ConnectStatus int
+
+const (
+	ConnectStatusError ConnectStatus = iota
+	ConnectStatusSuccess
+	ConnectStatusUnauthorized
+	ConnectStatusTlsUnauthorized
+)
+
+type FastConnectResult struct {
+	Status ConnectStatus
+	Model  string
+}
+
+func (f *FastConnectResult) String() string {
+	switch f.Status {
+	case ConnectStatusError:
+		return "连接错误"
+	case ConnectStatusSuccess:
+		return "已授权:" + f.Model
+	case ConnectStatusUnauthorized:
+		return "未授权"
+	case ConnectStatusTlsUnauthorized:
+		return "安卓11未授权"
+	}
+	return fmt.Sprintf("Status:%v Model:%v", f.Status, f.Model)
+}
