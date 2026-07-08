@@ -53,8 +53,8 @@ type DeviceEvent struct {
 // StartDiscovery 启动 ADB mDNS 设备发现服务。
 // ctx: 用于控制搜索的生命周期，调用 ctx 的 cancel 函数即可停止搜索；
 // onDeviceFound: 发现设备时的回调函数，所有状态的设备都会触发此回调。
-func StartDiscovery(ctx context.Context, onDeviceFound func(event DeviceEvent)) error {
-	resolver, err := zeroconf.NewResolver(nil)
+func StartDiscovery(ctx context.Context, onDeviceFound func(event DeviceEvent), options ...zeroconf.ClientOption) error {
+	resolver, err := zeroconf.NewResolver(options...)
 	if err != nil {
 		return fmt.Errorf("初始化 mDNS 解析器失败: %w", err)
 	}
