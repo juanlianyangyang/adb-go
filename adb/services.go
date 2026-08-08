@@ -93,17 +93,14 @@ func (s Service) GetDestination(args ...string) (string, error) {
 
 	switch s {
 	case ServiceShell:
-		for i, arg := range args {
-			if i > 0 {
-				dest.WriteString(" ")
-			}
-			if strings.Contains(arg, "\"") {
-				return "", fmt.Errorf("Shell 命令的参数不能包含双引号")
-			}
-			if strings.Contains(arg, " ") {
-				dest.WriteString(fmt.Sprintf("\"%s\"", arg))
-			} else {
-				dest.WriteString(arg)
+		if len(args) == 1 {
+			dest.WriteString(args[0])
+		} else if len(args) > 1 {
+			for i, arg := range args {
+				if i > 0 {
+					dest.WriteString(" ")
+				}
+				dest.WriteString(escapeArgForAdb(arg))
 			}
 		}
 	case ServiceFile, ServiceLocalUnixSocket, ServiceLocalUnixSocketAbstract,
@@ -151,4 +148,35 @@ func (s Service) GetDestination(args ...string) (string, error) {
 	}
 
 	return dest.String(), nil
+}
+
+// escapeArgForAdb 完美还原 AOSP (Android Open Source Project) 的 bash 参数转义逻辑
+func escapeArgForAdb(arg string) string {
+	// 1. 空字符串直接返回 ''
+	if arg == "" {
+		return "''"
+	}
+
+	// 2. 检查是否全是安全的 POSIX 字符
+	isSafe := true
+	for _, c := range arg {
+		// AOSP 认为安全的字符集合：字母、数字，以及 - . / _ : , +
+		if !((c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') ||
+			c == '-' || c == '.' || c == '/' || c == '_' || c == ':' || c == ',' || c == '+') {
+			isSafe = false
+			break
+		}
+	}
+
+	// 如果全部安全，原样透传，不加任何引号
+	if isSafe {
+		return arg
+	}
+
+	// 3. 包含危险字符（如空格、$、&、|、引号、非ASCII字符等）
+	// 使用单引号包裹，并将内部原有的单引号替换为 '\'' (闭合单引号 -> 转义单引号 -> 开启单引号)
+	escaped := strings.ReplaceAll(arg, "'", "'\\''")
+	return "'" + escaped + "'"
 }
